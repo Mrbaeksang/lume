@@ -9,26 +9,23 @@ import { promisify } from 'util';
 const execFileP = promisify(execFile);
 
 /**
- * MVP (slices 1–3): detect External edits (changes that land on disk from outside
- * Lume's editor), show Baseline ↔ Now as a diff, and keep/undo each per file.
- *
- * Rule (docs/adr/0002):
- *  - A file the user *saves* from the editor advances its Baseline — never flagged.
- *  - Any other on-disk change is an External edit (an Agent wrote it) — flagged.
- * Baseline = the file as we last accepted it; for files we never snapshotted (e.g. a
- * huge repo past the seed cap) we fall back to git HEAD, else an empty document.
- * Pending reviews persist across restarts in the extension's storage.
+ * Lume MVP: detect External edits (changes that land on disk from outside Lume's
+ * editor), show Baseline ↔ Now as a diff with +/- counts and gutter bars, and
+ * keep/undo each per file. See docs/adr/0002, 0003.
  */
 
 const BASELINE_SCHEME = 'lume-baseline';
 const IGNORED_SEGMENTS = ['/node_modules/', '/.git/', '/out/', '/dist/', '/build/', '/.vscode-test/', '/.lume/'];
 const MAX_BASELINE_BYTES = 1_000_000; // skip very large / binary files for now
+const MAX_DIFF_CELLS = 4_000_000;     // cap line-diff work on huge files
 
 type ChangeKind = 'modified' | 'added' | 'deleted';
 
 interface Change {
 	readonly uri: vscode.Uri;
 	readonly kind: ChangeKind;
+	readonly added: number;
+	readonly removed: number;
 }
 
 interface PersistedEntry {
@@ -38,6 +35,39 @@ interface PersistedEntry {
 
 function isIgnored(uri: vscode.Uri): boolean {
 	return IGNORED_SEGMENTS.some(seg => uri.path.includes(seg));
+}
+
+function splitLines(text: string): string[] {
+	return text.length ? text.split('\n') : [];
+}
+
+/** Line-level diff: which lines in `after` are new, plus +/- counts (LCS based). */
+function lineDiff(before: string, after: string): { addedLines: number[]; added: number; removed: number } {
+	const a = splitLines(before);
+	const b = splitLines(after);
+	const n = a.length;
+	const m = b.length;
+	if (n * m > MAX_DIFF_CELLS) {
+		return { addedLines: b.map((_, i) => i), added: m, removed: n };
+	}
+	const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+	for (let i = n - 1; i >= 0; i--) {
+		for (let j = m - 1; j >= 0; j--) {
+			dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+		}
+	}
+	const addedLines: number[] = [];
+	let i = 0;
+	let j = 0;
+	let removed = 0;
+	while (i < n && j < m) {
+		if (a[i] === b[j]) { i++; j++; }
+		else if (dp[i + 1][j] >= dp[i][j + 1]) { removed++; i++; }
+		else { addedLines.push(j); j++; }
+	}
+	while (j < m) { addedLines.push(j); j++; }
+	removed += n - i;
+	return { addedLines, added: addedLines.length, removed };
 }
 
 async function readText(uri: vscode.Uri): Promise<string | undefined> {
@@ -73,6 +103,7 @@ class ChangeTracker {
 	private readonly changes = new Map<string, Change>();       // path -> pending External edit
 	private readonly editorSaves = new Map<string, string>();   // path -> content the editor just saved
 	private readonly gitCache = new Map<string, string>();      // path -> git HEAD content (fallback)
+	private readonly lineMarks = new Map<string, number[]>();   // path -> changed line indices (for gutter)
 
 	private readonly _onDidChange = new vscode.EventEmitter<void>();
 	readonly onDidChange = this._onDidChange.event;
@@ -81,13 +112,16 @@ class ChangeTracker {
 
 	constructor(private readonly storageUri: vscode.Uri | undefined) {}
 
-	/** Bumps whenever the change set or a Baseline moves — used to bust diff caches. */
 	get version(): number {
 		return this._version;
 	}
 
 	list(): Change[] {
 		return [...this.changes.values()].sort((a, b) => a.uri.path.localeCompare(b.uri.path));
+	}
+
+	addedLinesFor(fsPath: string): number[] {
+		return this.lineMarks.get(fsPath) ?? [];
 	}
 
 	private notify(): void {
@@ -144,15 +178,17 @@ class ChangeTracker {
 		}
 
 		// Reverted back to a known Baseline → no pending change.
-		const before = this.baseline.get(key);
-		if (before !== undefined && before === text) {
+		const known = this.baseline.get(key);
+		if (known !== undefined && known === text) {
 			this.clear(key);
 			return;
 		}
 
-		// Keep an existing 'added' from being downgraded by a follow-up write.
 		const finalKind = this.changes.get(key)?.kind === 'added' ? 'added' : kind;
-		this.changes.set(key, { uri, kind: finalKind });
+		const before = await this.baselineContent(uri);
+		const { addedLines, added, removed } = lineDiff(before, text);
+		this.lineMarks.set(key, addedLines);
+		this.changes.set(key, { uri, kind: finalKind, added, removed });
 		this.notify();
 	}
 
@@ -160,16 +196,16 @@ class ChangeTracker {
 		void this.onDiskWrite(uri, 'added');
 	}
 
-	onDiskDeleted(uri: vscode.Uri): void {
+	async onDiskDeleted(uri: vscode.Uri): Promise<void> {
 		if (isIgnored(uri)) { return; }
 		const key = uri.fsPath;
-		// Only surface deletions of files we knew about (so undoing an 'added' file,
-		// which removes it, doesn't reappear as a 'deleted' entry).
 		if (!this.baseline.has(key)) {
-			this.clear(key);
+			this.clear(key); // never knew it (e.g. undoing an 'added' file)
 			return;
 		}
-		this.changes.set(key, { uri, kind: 'deleted' });
+		const removed = splitLines(this.baseline.get(key) ?? '').length;
+		this.lineMarks.delete(key);
+		this.changes.set(key, { uri, kind: 'deleted', added: 0, removed });
 		this.notify();
 	}
 
@@ -192,7 +228,7 @@ class ChangeTracker {
 			try { await vscode.workspace.fs.delete(change.uri, { useTrash: false }); } catch { /* already gone */ }
 		} else {
 			const content = await this.baselineContent(change.uri);
-			this.baseline.set(key, content); // keep Baseline so the rewrite self-clears
+			this.baseline.set(key, content);
 			await vscode.workspace.fs.writeFile(change.uri, Buffer.from(content, 'utf8'));
 		}
 		this.clear(key);
@@ -207,6 +243,7 @@ class ChangeTracker {
 	}
 
 	private clear(key: string): void {
+		this.lineMarks.delete(key);
 		if (this.changes.delete(key)) {
 			this.notify();
 		}
@@ -244,11 +281,27 @@ class ChangeTracker {
 			const bytes = await vscode.workspace.fs.readFile(file);
 			const data = JSON.parse(Buffer.from(bytes).toString('utf8')) as { entries?: Record<string, PersistedEntry> };
 			for (const [key, entry] of Object.entries(data.entries ?? {})) {
-				this.changes.set(key, { uri: vscode.Uri.file(key), kind: entry.kind });
+				this.changes.set(key, { uri: vscode.Uri.file(key), kind: entry.kind, added: 0, removed: 0 });
 				if (entry.baseline !== null) { this.baseline.set(key, entry.baseline); }
 			}
-			this._onDidChange.fire();
 		} catch { /* nothing persisted yet */ }
+	}
+
+	/** Recompute +/- counts and gutter marks for the current change set. */
+	async recomputeCounts(): Promise<void> {
+		for (const [key, change] of [...this.changes]) {
+			if (change.kind === 'deleted') {
+				this.changes.set(key, { ...change, removed: splitLines(this.baseline.get(key) ?? '').length });
+				continue;
+			}
+			const text = await readText(change.uri);
+			if (text === undefined) { continue; }
+			const before = await this.baselineContent(change.uri);
+			const { addedLines, added, removed } = lineDiff(before, text);
+			this.lineMarks.set(key, addedLines);
+			this.changes.set(key, { ...change, added, removed });
+		}
+		this._onDidChange.fire();
 	}
 }
 
@@ -260,6 +313,37 @@ class BaselineProvider implements vscode.TextDocumentContentProvider {
 		if (uri.query.startsWith('empty')) { return ''; }
 		const fileUri = uri.with({ scheme: 'file', query: '' });
 		return this.tracker.baselineContent(fileUri);
+	}
+}
+
+/** Draws a gutter bar on changed lines of the open file. */
+class GutterDecorator {
+	private readonly type: vscode.TextEditorDecorationType;
+
+	constructor(extensionUri: vscode.Uri, private readonly tracker: ChangeTracker) {
+		this.type = vscode.window.createTextEditorDecorationType({
+			gutterIconPath: vscode.Uri.joinPath(extensionUri, 'resources', 'gutter-bar.svg'),
+			gutterIconSize: 'contain',
+			overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.modifiedForeground'),
+			overviewRulerLane: vscode.OverviewRulerLane.Left,
+		});
+	}
+
+	update(editor?: vscode.TextEditor): void {
+		if (!editor) { return; }
+		const lines = this.tracker.addedLinesFor(editor.document.uri.fsPath);
+		const ranges = lines
+			.filter(l => l < editor.document.lineCount)
+			.map(l => new vscode.Range(l, 0, l, 0));
+		editor.setDecorations(this.type, ranges);
+	}
+
+	updateAll(): void {
+		for (const editor of vscode.window.visibleTextEditors) { this.update(editor); }
+	}
+
+	dispose(): void {
+		this.type.dispose();
 	}
 }
 
@@ -277,7 +361,8 @@ class ChangesProvider implements vscode.TreeDataProvider<Change> {
 
 	getTreeItem(change: Change): vscode.TreeItem {
 		const item = new vscode.TreeItem(change.uri, vscode.TreeItemCollapsibleState.None);
-		item.description = change.kind;
+		item.description = change.kind === 'deleted' ? `-${change.removed}` : `+${change.added} -${change.removed}`;
+		item.tooltip = `${change.kind} · +${change.added} -${change.removed}`;
 		item.resourceUri = change.uri;
 		item.contextValue = 'lumeChange';
 		item.iconPath = new vscode.ThemeIcon(
@@ -302,16 +387,21 @@ class ChangesProvider implements vscode.TreeDataProvider<Change> {
 export function activate(context: vscode.ExtensionContext): void {
 	const tracker = new ChangeTracker(context.storageUri);
 	const provider = new ChangesProvider(tracker);
+	const decorator = new GutterDecorator(context.extensionUri, tracker);
 
 	const watcher = vscode.workspace.createFileSystemWatcher('**/*');
 	context.subscriptions.push(
 		watcher,
+		decorator,
 		watcher.onDidChange(uri => void tracker.onDiskWrite(uri, 'modified')),
 		watcher.onDidCreate(uri => tracker.onDiskCreated(uri)),
-		watcher.onDidDelete(uri => tracker.onDiskDeleted(uri)),
+		watcher.onDidDelete(uri => void tracker.onDiskDeleted(uri)),
 		vscode.workspace.onDidSaveTextDocument(doc => tracker.noteEditorSave(doc)),
 		vscode.workspace.registerTextDocumentContentProvider(BASELINE_SCHEME, new BaselineProvider(tracker)),
 		vscode.window.registerTreeDataProvider('lume.changes', provider),
+		vscode.window.onDidChangeActiveTextEditor(editor => decorator.update(editor)),
+		vscode.window.onDidChangeVisibleTextEditors(() => decorator.updateAll()),
+		tracker.onDidChange(() => decorator.updateAll()),
 		vscode.commands.registerCommand('lume.refresh', () => provider.refresh()),
 		vscode.commands.registerCommand('lume.accept', (change: Change) => tracker.accept(change)),
 		vscode.commands.registerCommand('lume.undo', (change: Change) => tracker.undo(change)),
@@ -322,6 +412,8 @@ export function activate(context: vscode.ExtensionContext): void {
 	void (async () => {
 		await tracker.load();
 		await tracker.seed();
+		await tracker.recomputeCounts();
+		decorator.updateAll();
 	})();
 }
 
