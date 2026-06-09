@@ -74,7 +74,9 @@ class ChangeTracker {
 		this.editorSaves.set(doc.uri.fsPath, doc.getText());
 	}
 
-	async onDiskChanged(uri: vscode.Uri): Promise<void> {
+	// `kind` comes from the watcher event (create vs change), not from whether we
+	// happen to hold a Baseline — a modified file may simply not have been seeded yet.
+	async onDiskWrite(uri: vscode.Uri, kind: 'added' | 'modified'): Promise<void> {
 		if (isIgnored(uri)) { return; }
 		const key = uri.fsPath;
 		const text = await readText(uri);
@@ -88,19 +90,21 @@ class ChangeTracker {
 			return;
 		}
 
+		// Reverted back to a known Baseline → no pending change.
 		const before = this.baseline.get(key);
-		if (before === text) {
-			this.clear(key); // reverted to Baseline
+		if (before !== undefined && before === text) {
+			this.clear(key);
 			return;
 		}
-		this.changes.set(key, { uri, kind: before === undefined ? 'added' : 'modified' });
+
+		// Keep an existing 'added' from being downgraded by a follow-up write.
+		const finalKind = this.changes.get(key)?.kind === 'added' ? 'added' : kind;
+		this.changes.set(key, { uri, kind: finalKind });
 		this._onDidChange.fire();
 	}
 
 	onDiskCreated(uri: vscode.Uri): void {
-		if (isIgnored(uri)) { return; }
-		// A brand-new file with no Baseline.
-		void this.onDiskChanged(uri);
+		void this.onDiskWrite(uri, 'added');
 	}
 
 	onDiskDeleted(uri: vscode.Uri): void {
@@ -152,7 +156,7 @@ export function activate(context: vscode.ExtensionContext): void {
 	const watcher = vscode.workspace.createFileSystemWatcher('**/*');
 	context.subscriptions.push(
 		watcher,
-		watcher.onDidChange(uri => void tracker.onDiskChanged(uri)),
+		watcher.onDidChange(uri => void tracker.onDiskWrite(uri, 'modified')),
 		watcher.onDidCreate(uri => tracker.onDiskCreated(uri)),
 		watcher.onDidDelete(uri => tracker.onDiskDeleted(uri)),
 		vscode.workspace.onDidSaveTextDocument(doc => tracker.noteEditorSave(doc)),
