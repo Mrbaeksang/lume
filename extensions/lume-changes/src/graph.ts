@@ -76,6 +76,9 @@ export class ImpactGraphPanel {
 	.node .sub { font-size: 10px; fill: var(--vscode-descriptionForeground, #999); }
 	.node:hover .card { stroke: var(--accent); stroke-width: 2; }
 	.dim { opacity: .18; }
+	.node.far { opacity: .72; }
+	.badge { fill: var(--accent); }
+	.badge-text { fill: var(--vscode-editor-background, #1e1e1e); font-size: 10px; font-weight: 700; pointer-events: none; }
 	#empty { position: fixed; inset: 38px 0 0 0; display: flex; align-items: center; justify-content: center;
 		text-align: center; padding: 40px; opacity: .65; line-height: 1.6; }
 </style>
@@ -188,29 +191,36 @@ export class ImpactGraphPanel {
 			const p = NS('path', { class: 'edge', 'marker-end': 'url(#arrow)', d: edgePath(l) });
 			l.el = p; edgeEls.push(p); edgesG.appendChild(p);
 		}
+		function placeNode(n) {
+			for (const [el, dx, dy] of n.parts) { el.setAttribute('x', n.x + dx); el.setAttribute('y', n.y + dy); }
+		}
 		for (const n of nodes) {
-			const g = NS('g', { class: 'node ' + n.kind });
-			g.appendChild(NS('rect', { class: 'card', x: n.x, y: n.y, width: n.w, height: n.h }));
-			g.appendChild(NS('rect', { class: 'accent', x: n.x + 6, y: n.y + 9, width: 4, height: n.h - 18 }));
-			const name = NS('text', { class: 'name', x: n.x + 18, y: n.y + 20 }); name.textContent = trim(n.label, 26); g.appendChild(name);
+			const g = NS('g', { class: 'node ' + n.kind + (n.depth === 2 ? ' far' : '') });
+			n.parts = [];
+			const part = (el, dx, dy) => { n.parts.push([el, dx, dy]); g.appendChild(el); return el; };
+			const card = part(NS('rect', { class: 'card', width: n.w, height: n.h }), 0, 0);
+			if (n.kind === 'changed' && n.refs) {
+				card.style.filter = 'drop-shadow(0 0 ' + (5 + Math.min(n.refs, 12) * 1.6) + 'px color-mix(in srgb, var(--accent) 60%, transparent))';
+			}
+			part(NS('rect', { class: 'accent', width: 4, height: n.h - 18 }), 6, 9);
+			const name = part(NS('text', { class: 'name' }), 18, 20); name.textContent = trim(n.label, 24);
 			const file = (n.file.split('/').pop() || n.file);
-			const sub = NS('text', { class: 'sub', x: n.x + 18, y: n.y + 35 }); sub.textContent = trim(file + ':' + (n.line + 1), 30); g.appendChild(sub);
-			const tt = NS('title', {}); tt.textContent = n.label + '  (' + file + ':' + (n.line + 1) + ')'; g.appendChild(tt);
+			const sub = part(NS('text', { class: 'sub' }), 18, 35); sub.textContent = trim(file + ':' + (n.line + 1), 30);
+			if (n.kind === 'changed' && n.refs) {
+				const bw = 24 + String(n.refs).length * 7;
+				part(NS('rect', { class: 'badge', width: bw, height: 15, rx: 7.5 }), n.w - bw - 8, 7);
+				const bt = part(NS('text', { class: 'badge-text', 'text-anchor': 'middle' }), n.w - bw / 2 - 8, 18); bt.textContent = n.refs + '↗';
+			}
+			const tt = NS('title', {}); tt.textContent = n.label + '  (' + file + ':' + (n.line + 1) + (n.refs ? ' · used ' + n.refs + 'x' : '') + ')'; g.appendChild(tt);
 			n.el = g; nodeEls.push(g); nodesG.appendChild(g);
-
+			placeNode(n);
 			g.addEventListener('mouseenter', () => highlight(n.id));
 			g.addEventListener('mouseleave', () => highlight(null));
 			startDrag(g, n);
 		}
 		function redraw() {
 			for (const l of links) l.el.setAttribute('d', edgePath(l));
-			for (const n of nodes) {
-				n.el.querySelector('.card').setAttribute('x', n.x); n.el.querySelector('.card').setAttribute('y', n.y);
-				n.el.querySelector('.accent').setAttribute('x', n.x + 6); n.el.querySelector('.accent').setAttribute('y', n.y + 9);
-				const [name, sub] = n.el.querySelectorAll('text');
-				name.setAttribute('x', n.x + 18); name.setAttribute('y', n.y + 20);
-				sub.setAttribute('x', n.x + 18); sub.setAttribute('y', n.y + 35);
-			}
+			for (const n of nodes) placeNode(n);
 		}
 		function highlight(id) {
 			if (!id) { nodeEls.forEach(e => e.classList.remove('dim')); edgeEls.forEach(e => e.classList.remove('dim', 'hot')); return; }

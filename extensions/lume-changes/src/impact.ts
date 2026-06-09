@@ -94,6 +94,8 @@ export interface GraphNode {
 	readonly kind: 'changed' | 'caller';
 	readonly file: string;
 	readonly line: number;
+	readonly depth: number;   // 0 = changed, 1 = direct caller, 2 = caller's caller
+	readonly refs?: number;   // reference count (changed nodes) — for visual weight
 }
 
 export interface GraphEdge {
@@ -106,26 +108,41 @@ export interface ImpactGraph {
 	readonly edges: GraphEdge[];
 }
 
-/** Build a node-link graph: changed symbols and the places that call them. */
+/** Build a node-link graph: changed symbols and the places that call them, 2 levels deep. */
 export async function buildImpactGraph(source: ImpactSource): Promise<ImpactGraph> {
+	const MAX_NODES = 48;
 	const nodes = new Map<string, GraphNode>();
 	const edges: GraphEdge[] = [];
-	const add = (n: GraphNode) => { if (!nodes.has(n.id)) { nodes.set(n.id, n); } };
+	const key = (uri: vscode.Uri, line: number, name: string) => `${uri.fsPath}:${line}:${name}`;
+	const add = (n: GraphNode) => { if (!nodes.has(n.id) && nodes.size < MAX_NODES) { nodes.set(n.id, n); } };
 
+	let frontier: { uri: vscode.Uri; pos: vscode.Position; id: string }[] = [];
 	for (const uri of source.modifiedFiles()) {
 		const lines = new Set(source.changedLines(uri.fsPath));
 		if (!lines.size) { continue; }
-		const syms = relevantSymbols(await documentSymbols(uri)).filter(s => overlaps(s.range, lines));
-		for (const s of syms) {
+		for (const s of relevantSymbols(await documentSymbols(uri)).filter(s => overlaps(s.range, lines))) {
 			const pos = s.selectionRange.start;
-			const symId = `${uri.fsPath}:${pos.line}:${s.name}`;
-			add({ id: symId, label: s.name, kind: 'changed', file: uri.fsPath, line: pos.line });
-			for (const c of await incomingCallers(uri, pos)) {
-				const callerId = `${c.uri.fsPath}:${c.range.start.line}:${c.name}`;
-				add({ id: callerId, label: c.name, kind: 'caller', file: c.uri.fsPath, line: c.range.start.line });
-				edges.push({ from: callerId, to: symId });
+			const id = key(uri, pos.line, s.name);
+			const refs = (await references(uri, pos)).filter(r => !(r.uri.fsPath === uri.fsPath && r.range.start.line === pos.line)).length;
+			add({ id, label: s.name, kind: 'changed', file: uri.fsPath, line: pos.line, depth: 0, refs });
+			if (nodes.has(id)) { frontier.push({ uri, pos, id }); }
+		}
+	}
+
+	for (let depth = 1; depth <= 2 && frontier.length && nodes.size < MAX_NODES; depth++) {
+		const next: typeof frontier = [];
+		for (const f of frontier) {
+			for (const c of await incomingCallers(f.uri, f.pos)) {
+				const cId = key(c.uri, c.range.start.line, c.name);
+				const fresh = !nodes.has(cId);
+				add({ id: cId, label: c.name, kind: 'caller', file: c.uri.fsPath, line: c.range.start.line, depth });
+				if (nodes.has(cId)) {
+					edges.push({ from: cId, to: f.id });
+					if (fresh && depth < 2) { next.push({ uri: c.uri, pos: c.range.start, id: cId }); }
+				}
 			}
 		}
+		frontier = next;
 	}
 	return { nodes: [...nodes.values()], edges };
 }
