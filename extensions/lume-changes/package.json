@@ -1,0 +1,69 @@
+{
+  "name": "lume-changes",
+  "displayName": "Lume — AI Changes",
+  "description": "See what an AI agent changed in your workspace, and review it before you keep it.",
+  "version": "0.0.1",
+  "publisher": "lume",
+  "license": "Apache-2.0",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lume",
+          "title": "Lume",
+          "icon": "resources/lume-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "lume": [
+        {
+          "id": "lume.changes",
+          "name": "AI Changes"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "lume.changes",
+        "contents": "No AI changes yet.\nRun your agent (Claude Code, Codex, …) — what it edits will appear here to review."
+      }
+    ],
+    "commands": [
+      {
+        "command": "lume.refresh",
+        "title": "Lume: Refresh AI Changes",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "lume.refresh",
+          "when": "view == lume.changes",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.4.0"
+  }
+}
