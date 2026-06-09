@@ -33,6 +33,10 @@
           "name": "AI Changes"
         },
         {
+          "id": "lume.impact",
+          "name": "Impact"
+        },
+        {
           "id": "lume.checkpoints",
           "name": "Checkpoints"
         }
@@ -42,6 +46,10 @@
       {
         "view": "lume.changes",
         "contents": "No AI changes yet.\nRun your agent (Claude Code, Codex, …) — what it edits will appear here to review."
+      },
+      {
+        "view": "lume.impact",
+        "contents": "No impact to show.\nWhen an Agent changes a symbol, the places that reference it appear here — so you can see the blast radius before you keep the change."
       },
       {
         "view": "lume.checkpoints",
@@ -93,6 +101,11 @@
         "command": "lume.preview.open",
         "title": "Lume: Live Preview",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "lume.impact.refresh",
+        "title": "Lume: Refresh Impact",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
@@ -115,6 +128,11 @@
         {
           "command": "lume.checkpoint.create",
           "when": "view == lume.checkpoints",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lume.impact.refresh",
+          "when": "view == lume.impact",
           "group": "navigation@1"
         }
       ],
