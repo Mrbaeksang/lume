@@ -1,0 +1,13 @@
+Lume
+Copyright 2026 The Lume Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE.txt).
+
+This product is a fork of Visual Studio Code ("Code - OSS"), developed by
+Microsoft Corporation and the Visual Studio Code contributors
+(https://github.com/microsoft/vscode), licensed under the MIT License.
+The original MIT License is preserved in LICENSE-VS-Code.txt and continues to
+apply to all code derived from that project.
+
+"Visual Studio Code" and the Visual Studio Code logo are trademarks of
+Microsoft Corporation. Lume is not affiliated with or endorsed by Microsoft.

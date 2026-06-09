@@ -62,7 +62,7 @@ npm run valid-layers-check # enforce layer boundaries
 - `origin` = `Mrbaeksang/lume`, `upstream` = `microsoft/vscode`. Default branch `main`.
 - Sync upstream: `git fetch upstream && git merge upstream/main`.
 - The ECC pre-commit hook flags upstream **test fixtures** as secrets (e.g. `secretFilter.spec.ts`). `--no-verify` is acceptable **only** when committing untouched upstream code; **never** bypass it for Lume code.
-- License: MIT. No Microsoft branding/marketplace — use [Open VSX](https://open-vsx.org).
+- License: Lume code = Apache-2.0 (`LICENSE.txt`); VS Code-derived code = MIT (`LICENSE-VS-Code.txt`); see `NOTICE` and `docs/adr/0001-apache-2-license.md`. New files get an Apache-2.0 header; don't relicense upstream MIT headers. No Microsoft branding/marketplace — use [Open VSX](https://open-vsx.org).
 
 ## Agent skills config
 

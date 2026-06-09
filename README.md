@@ -6,9 +6,10 @@
 
 A transparent, AI-native code editor. Built on VS Code.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.txt)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE.txt)
+[![Based on VS Code](https://img.shields.io/badge/based%20on-Code%20--%20OSS-007ACC.svg)](https://github.com/microsoft/vscode)
 ![Status](https://img.shields.io/badge/status-early%20WIP-orange.svg)
-![Based on VS Code](https://img.shields.io/badge/based%20on-Code%20--%20OSS-007ACC.svg)
+[![Stars](https://img.shields.io/github/stars/Mrbaeksang/lume?style=flat)](https://github.com/Mrbaeksang/lume/stargazers)
 
 </div>
 
@@ -36,7 +37,7 @@ We're shipping these one at a time, sharp. First up: **live AI diff**.
 
 ## Built on VS Code
 
-Lume is a downstream fork of [Code - OSS](https://github.com/microsoft/vscode) (MIT) — the open-source core of VS Code, the same foundation Cursor and Windsurf build on. We track upstream so the editor stays current while we add the trust layer on top.
+Lume is a downstream fork of [Code - OSS](https://github.com/microsoft/vscode) — the open-source core of VS Code, the same foundation Cursor, Windsurf, and Void build on. We track upstream so the editor stays current while we add the trust layer on top.
 
 ## Development
 
@@ -46,11 +47,18 @@ npm run watch      # compile + watch
 ./scripts/code.sh  # launch the dev build
 ```
 
-Node version is pinned in [`.nvmrc`](.nvmrc).
+Node version is pinned in [`.nvmrc`](.nvmrc). See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
+
+## Acknowledgements
+
+Lume stands on the work of others:
+
+- **[VS Code (Code - OSS)](https://github.com/microsoft/vscode)** — the editor core we fork, MIT licensed.
+- **[Void](https://github.com/voideditor/void)** — an open-source VS Code/AI fork whose architecture (streaming, token-by-token diffs) is a reference for our trust layer.
 
 ## License
 
-Licensed under the [MIT License](LICENSE.txt).
+Lume's own code is licensed under the [Apache License 2.0](LICENSE.txt). Code derived from VS Code remains under its original [MIT License](LICENSE-VS-Code.txt); see [`NOTICE`](NOTICE).
 
 Lume is **not affiliated with or endorsed by Microsoft**. "Visual Studio Code" and the VS Code logo are trademarks of Microsoft; Lume ships under its own branding and uses [Open VSX](https://open-vsx.org) for extensions.
 
