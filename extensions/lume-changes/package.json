@@ -2,7 +2,7 @@
   "name": "lume-changes",
   "displayName": "Lume — AI Changes",
   "description": "See what an AI agent changed in your workspace, and review it before you keep it.",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "lume",
   "license": "Apache-2.0",
   "repository": {
@@ -35,6 +35,10 @@
     "views": {
       "lume": [
         {
+          "id": "lume.projects",
+          "name": "Projects"
+        },
+        {
           "id": "lume.changes",
           "name": "AI Changes"
         },
@@ -50,6 +54,10 @@
     },
     "viewsWelcome": [
       {
+        "view": "lume.projects",
+        "contents": "No projects yet.\n[Add project](command:lume.projects.add)\nAdd folders here to switch between them as tabs."
+      },
+      {
         "view": "lume.changes",
         "contents": "No AI changes yet.\nRun your agent (Claude Code, Codex, …) — what it edits will appear here to review."
       },
@@ -63,6 +71,16 @@
       }
     ],
     "commands": [
+      {
+        "command": "lume.projects.add",
+        "title": "Lume: Add Project",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lume.projects.remove",
+        "title": "Lume: Remove Project",
+        "icon": "$(close)"
+      },
       {
         "command": "lume.refresh",
         "title": "Lume: Refresh AI Changes",
@@ -122,6 +140,11 @@
     "menus": {
       "view/title": [
         {
+          "command": "lume.projects.add",
+          "when": "view == lume.projects",
+          "group": "navigation@1"
+        },
+        {
           "command": "lume.acceptAll",
           "when": "view == lume.changes",
           "group": "navigation@1"
@@ -153,6 +176,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "lume.projects.remove",
+          "when": "view == lume.projects",
+          "group": "inline@1"
+        },
         {
           "command": "lume.accept",
           "when": "view == lume.changes",
