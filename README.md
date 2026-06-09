@@ -35,6 +35,16 @@ We're shipping these one at a time, sharp. First up: **live AI diff**.
 
 > **Status: day one.** This is a public fork of VS Code being reshaped into the above. Star to follow along — the interesting parts are still being built.
 
+## Try it now
+
+The first feature — the **AI Changes** review layer (live diff, impact graph, checkpoints, live preview) — ships today as an extension you can drop into VS Code or Cursor:
+
+1. Download the latest `.vsix` from [**Releases**](https://github.com/Mrbaeksang/lume/releases/latest).
+2. In VS Code / Cursor: `Cmd/Ctrl+Shift+P` → **Install from VSIX…** → pick the file → reload.
+3. The **Lume** icon appears in the activity bar. Run your agent (Claude Code, Codex, …) and watch what it changes — review, keep, or undo before you trust it.
+
+Agent-agnostic, git-independent, no AI bundled.
+
 ## Built on VS Code
 
 Lume is a downstream fork of [Code - OSS](https://github.com/microsoft/vscode) — the open-source core of VS Code, the same foundation Cursor, Windsurf, and Void build on. We track upstream so the editor stays current while we add the trust layer on top.
