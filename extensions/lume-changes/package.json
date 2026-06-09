@@ -5,6 +5,12 @@
   "version": "0.0.1",
   "publisher": "lume",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Mrbaeksang/lume.git",
+    "directory": "extensions/lume-changes"
+  },
+  "homepage": "https://github.com/Mrbaeksang/lume",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -182,6 +188,7 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./"
   },
