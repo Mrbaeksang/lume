@@ -114,4 +114,13 @@ export class ImpactProvider implements vscode.TreeDataProvider<ImpactItem> {
 	getChildren(): ImpactItem[] {
 		return this.items;
 	}
+
+	/** Highest reference count among a file's changed symbols (0 if none / not computed). */
+	scoreFor(fsPath: string): number {
+		let max = 0;
+		for (const it of this.items) {
+			if (it.uri.fsPath === fsPath && it.refs > max) { max = it.refs; }
+		}
+		return max;
+	}
 }
