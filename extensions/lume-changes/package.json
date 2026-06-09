@@ -88,6 +88,11 @@
         "command": "lume.checkpoint.delete",
         "title": "Lume: Delete Checkpoint",
         "icon": "$(trash)"
+      },
+      {
+        "command": "lume.preview.open",
+        "title": "Lume: Live Preview",
+        "icon": "$(open-preview)"
       }
     ],
     "menus": {
@@ -134,7 +139,28 @@
           "when": "view == lume.checkpoints",
           "group": "inline@2"
         }
+      ],
+      "editor/title": [
+        {
+          "command": "lume.preview.open",
+          "group": "navigation"
+        }
       ]
+    },
+    "configuration": {
+      "title": "Lume",
+      "properties": {
+        "lume.preview.url": {
+          "type": "string",
+          "default": "http://localhost:3000",
+          "description": "Default URL for Lume Live Preview (your dev server)."
+        },
+        "lume.preview.reloadOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Reload the Lume Live Preview when you save a file."
+        }
+      }
     }
   },
   "scripts": {
