@@ -33,17 +33,22 @@ interface CallerNode {
 
 type ImpactNode = SymbolNode | CallerNode;
 
-const INTERESTING = new Set<vscode.SymbolKind>([
-	vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Class,
-	vscode.SymbolKind.Constructor, vscode.SymbolKind.Interface, vscode.SymbolKind.Enum,
-	vscode.SymbolKind.Constant, vscode.SymbolKind.Variable, vscode.SymbolKind.Field,
-	vscode.SymbolKind.Property, vscode.SymbolKind.Struct,
+// Only callable/structural symbols carry meaningful blast radius; interface fields,
+// properties and local variables are noise.
+const RELEVANT = new Set<vscode.SymbolKind>([
+	vscode.SymbolKind.Function, vscode.SymbolKind.Method,
+	vscode.SymbolKind.Class, vscode.SymbolKind.Constructor,
+]);
+// Don't descend into these — their children are local variables, not API.
+const OPAQUE = new Set<vscode.SymbolKind>([
+	vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor,
 ]);
 
-function flatten(symbols: vscode.DocumentSymbol[]): vscode.DocumentSymbol[] {
-	const out: vscode.DocumentSymbol[] = [];
-	const walk = (s: vscode.DocumentSymbol) => { out.push(s); (s.children ?? []).forEach(walk); };
-	symbols.forEach(walk);
+function relevantSymbols(symbols: vscode.DocumentSymbol[], out: vscode.DocumentSymbol[] = []): vscode.DocumentSymbol[] {
+	for (const s of symbols) {
+		if (RELEVANT.has(s.kind)) { out.push(s); }
+		if (!OPAQUE.has(s.kind)) { relevantSymbols(s.children ?? [], out); }
+	}
 	return out;
 }
 
@@ -110,7 +115,7 @@ export async function buildImpactGraph(source: ImpactSource): Promise<ImpactGrap
 	for (const uri of source.modifiedFiles()) {
 		const lines = new Set(source.changedLines(uri.fsPath));
 		if (!lines.size) { continue; }
-		const syms = flatten(await documentSymbols(uri)).filter(s => INTERESTING.has(s.kind) && overlaps(s.range, lines));
+		const syms = relevantSymbols(await documentSymbols(uri)).filter(s => overlaps(s.range, lines));
 		for (const s of syms) {
 			const pos = s.selectionRange.start;
 			const symId = `${uri.fsPath}:${pos.line}:${s.name}`;
@@ -149,7 +154,7 @@ export class ImpactProvider implements vscode.TreeDataProvider<ImpactNode> {
 		for (const uri of this.source.modifiedFiles()) {
 			const lines = new Set(this.source.changedLines(uri.fsPath));
 			if (!lines.size) { continue; }
-			const syms = flatten(await documentSymbols(uri)).filter(s => INTERESTING.has(s.kind) && overlaps(s.range, lines));
+			const syms = relevantSymbols(await documentSymbols(uri)).filter(s => overlaps(s.range, lines));
 			for (const s of syms) {
 				const pos = s.selectionRange.start;
 				const refs = await references(uri, pos);

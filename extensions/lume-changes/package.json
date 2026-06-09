@@ -2,7 +2,7 @@
   "name": "lume-changes",
   "displayName": "Lume — AI Changes",
   "description": "See what an AI agent changed in your workspace, and review it before you keep it.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "lume",
   "license": "Apache-2.0",
   "repository": {
