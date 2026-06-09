@@ -83,6 +83,48 @@ async function incomingCallers(uri: vscode.Uri, pos: vscode.Position): Promise<C
 	}
 }
 
+export interface GraphNode {
+	readonly id: string;
+	readonly label: string;
+	readonly kind: 'changed' | 'caller';
+	readonly file: string;
+	readonly line: number;
+}
+
+export interface GraphEdge {
+	readonly from: string;
+	readonly to: string;
+}
+
+export interface ImpactGraph {
+	readonly nodes: GraphNode[];
+	readonly edges: GraphEdge[];
+}
+
+/** Build a node-link graph: changed symbols and the places that call them. */
+export async function buildImpactGraph(source: ImpactSource): Promise<ImpactGraph> {
+	const nodes = new Map<string, GraphNode>();
+	const edges: GraphEdge[] = [];
+	const add = (n: GraphNode) => { if (!nodes.has(n.id)) { nodes.set(n.id, n); } };
+
+	for (const uri of source.modifiedFiles()) {
+		const lines = new Set(source.changedLines(uri.fsPath));
+		if (!lines.size) { continue; }
+		const syms = flatten(await documentSymbols(uri)).filter(s => INTERESTING.has(s.kind) && overlaps(s.range, lines));
+		for (const s of syms) {
+			const pos = s.selectionRange.start;
+			const symId = `${uri.fsPath}:${pos.line}:${s.name}`;
+			add({ id: symId, label: s.name, kind: 'changed', file: uri.fsPath, line: pos.line });
+			for (const c of await incomingCallers(uri, pos)) {
+				const callerId = `${c.uri.fsPath}:${c.range.start.line}:${c.name}`;
+				add({ id: callerId, label: c.name, kind: 'caller', file: c.uri.fsPath, line: c.range.start.line });
+				edges.push({ from: callerId, to: symId });
+			}
+		}
+	}
+	return { nodes: [...nodes.values()], edges };
+}
+
 export class ImpactProvider implements vscode.TreeDataProvider<ImpactNode> {
 	private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
 	readonly onDidChangeTreeData = this._onDidChangeTreeData.event;

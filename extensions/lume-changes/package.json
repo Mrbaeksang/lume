@@ -2,7 +2,7 @@
   "name": "lume-changes",
   "displayName": "Lume — AI Changes",
   "description": "See what an AI agent changed in your workspace, and review it before you keep it.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "lume",
   "license": "Apache-2.0",
   "repository": {
@@ -112,6 +112,11 @@
         "command": "lume.impact.refresh",
         "title": "Lume: Refresh Impact",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "lume.impact.graph",
+        "title": "Lume: Impact Graph",
+        "icon": "$(type-hierarchy)"
       }
     ],
     "menus": {
@@ -135,6 +140,11 @@
           "command": "lume.checkpoint.create",
           "when": "view == lume.checkpoints",
           "group": "navigation@1"
+        },
+        {
+          "command": "lume.impact.graph",
+          "when": "view == lume.impact",
+          "group": "navigation@0"
         },
         {
           "command": "lume.impact.refresh",
