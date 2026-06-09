@@ -31,6 +31,12 @@
 	"linuxIconName": "lume",
 	"licenseFileName": "LICENSE.txt",
 	"reportIssueUrl": "https://github.com/Mrbaeksang/lume/issues/new",
+	"configurationDefaults": {
+		"workbench.startupEditor": "none",
+		"workbench.welcomePage.walkthroughs.openOnInstall": false,
+		"telemetry.telemetryLevel": "off",
+		"update.mode": "none"
+	},
 	"nodejsRepository": "https://nodejs.org",
 	"urlProtocol": "lume",
 	"agentsTelemetryAppName": "agents",
