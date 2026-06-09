@@ -11,12 +11,14 @@ import * as vscode from 'vscode';
 
 const IGNORE_GLOB = '**/{node_modules,.git,out,dist,build,.vscode-test,.lume}/**';
 const MAX_SNAPSHOT_BYTES = 1_000_000;
+const MAX_AUTO = 15; // keep at most this many automatic checkpoints
 
 export interface CheckpointMeta {
 	readonly id: string;
 	readonly label: string;
 	readonly time: number; // epoch ms
 	readonly fileCount: number;
+	readonly auto?: boolean;
 }
 
 async function snapshotWorkspace(): Promise<Record<string, string>> {
@@ -76,7 +78,7 @@ export class CheckpointStore {
 		} catch { /* best effort */ }
 	}
 
-	async create(label: string): Promise<void> {
+	async create(label: string, auto = false): Promise<void> {
 		const dir = this.dir();
 		if (!dir) { return; }
 		const files = await snapshotWorkspace();
@@ -85,9 +87,24 @@ export class CheckpointStore {
 			await vscode.workspace.fs.createDirectory(dir);
 			await vscode.workspace.fs.writeFile(this.snapFile(id), Buffer.from(JSON.stringify(files), 'utf8'));
 		} catch { return; }
-		this.metas.push({ id, label, time: Date.now(), fileCount: Object.keys(files).length });
+		this.metas.push({ id, label, time: Date.now(), fileCount: Object.keys(files).length, auto });
+		if (auto) { await this.pruneAutos(); }
 		await this.saveIndex();
 		this._onDidChange.fire();
+	}
+
+	/** Snapshot before a burst of Agent edits; capped so they don't pile up. */
+	async createAuto(): Promise<void> {
+		const stamp = new Date().toLocaleTimeString();
+		await this.create(`Auto · ${stamp}`, true);
+	}
+
+	private async pruneAutos(): Promise<void> {
+		const autos = this.metas.filter(m => m.auto).sort((a, b) => b.time - a.time);
+		for (const old of autos.slice(MAX_AUTO)) {
+			this.metas = this.metas.filter(m => m.id !== old.id);
+			try { await vscode.workspace.fs.delete(this.snapFile(old.id)); } catch { /* gone */ }
+		}
 	}
 
 	/** Write every snapshotted file back to disk. */
