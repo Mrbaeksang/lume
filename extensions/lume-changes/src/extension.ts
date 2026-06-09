@@ -9,14 +9,15 @@ import { promisify } from 'util';
 const execFileP = promisify(execFile);
 
 /**
- * Slices 1–2: detect External edits (changes that land on disk from outside
- * Lume's editor) and let the user click one to see Baseline ↔ Now as a diff.
+ * MVP (slices 1–3): detect External edits (changes that land on disk from outside
+ * Lume's editor), show Baseline ↔ Now as a diff, and keep/undo each per file.
  *
- * Rule (see docs/adr/0002):
+ * Rule (docs/adr/0002):
  *  - A file the user *saves* from the editor advances its Baseline — never flagged.
  *  - Any other on-disk change is an External edit (an Agent wrote it) — flagged.
- * Baseline = the file as we last knew it; for files we never snapshot­ted (e.g. a
+ * Baseline = the file as we last accepted it; for files we never snapshotted (e.g. a
  * huge repo past the seed cap) we fall back to git HEAD, else an empty document.
+ * Pending reviews persist across restarts in the extension's storage.
  */
 
 const BASELINE_SCHEME = 'lume-baseline';
@@ -28,6 +29,11 @@ type ChangeKind = 'modified' | 'added' | 'deleted';
 interface Change {
 	readonly uri: vscode.Uri;
 	readonly kind: ChangeKind;
+}
+
+interface PersistedEntry {
+	readonly kind: ChangeKind;
+	readonly baseline: string | null;
 }
 
 function isIgnored(uri: vscode.Uri): boolean {
@@ -71,6 +77,9 @@ class ChangeTracker {
 	private readonly _onDidChange = new vscode.EventEmitter<void>();
 	readonly onDidChange = this._onDidChange.event;
 	private _version = 0;
+	private saveTimer?: ReturnType<typeof setTimeout>;
+
+	constructor(private readonly storageUri: vscode.Uri | undefined) {}
 
 	/** Bumps whenever the change set or a Baseline moves — used to bust diff caches. */
 	get version(): number {
@@ -84,6 +93,7 @@ class ChangeTracker {
 	private notify(): void {
 		this._version++;
 		this._onDidChange.fire();
+		this.scheduleSave();
 	}
 
 	/** The "before" content to diff an External edit against. */
@@ -105,6 +115,7 @@ class ChangeTracker {
 			5000,
 		);
 		await Promise.all(uris.map(async uri => {
+			if (this.baseline.has(uri.fsPath)) { return; } // don't clobber a restored Baseline
 			const text = await readText(uri);
 			if (text !== undefined) {
 				this.baseline.set(uri.fsPath, text);
@@ -152,14 +163,92 @@ class ChangeTracker {
 	onDiskDeleted(uri: vscode.Uri): void {
 		if (isIgnored(uri)) { return; }
 		const key = uri.fsPath;
+		// Only surface deletions of files we knew about (so undoing an 'added' file,
+		// which removes it, doesn't reappear as a 'deleted' entry).
+		if (!this.baseline.has(key)) {
+			this.clear(key);
+			return;
+		}
 		this.changes.set(key, { uri, kind: 'deleted' });
 		this.notify();
+	}
+
+	/** Keep the External edit: the current content becomes the new Baseline. */
+	async accept(change: Change): Promise<void> {
+		const key = change.uri.fsPath;
+		if (change.kind === 'deleted') {
+			this.baseline.delete(key);
+		} else {
+			const text = await readText(change.uri);
+			if (text !== undefined) { this.baseline.set(key, text); }
+		}
+		this.clear(key);
+	}
+
+	/** Discard the External edit: restore the file to its Baseline. */
+	async undo(change: Change): Promise<void> {
+		const key = change.uri.fsPath;
+		if (change.kind === 'added') {
+			try { await vscode.workspace.fs.delete(change.uri, { useTrash: false }); } catch { /* already gone */ }
+		} else {
+			const content = await this.baselineContent(change.uri);
+			this.baseline.set(key, content); // keep Baseline so the rewrite self-clears
+			await vscode.workspace.fs.writeFile(change.uri, Buffer.from(content, 'utf8'));
+		}
+		this.clear(key);
+	}
+
+	async acceptAll(): Promise<void> {
+		for (const change of this.list()) { await this.accept(change); }
+	}
+
+	async undoAll(): Promise<void> {
+		for (const change of this.list()) { await this.undo(change); }
 	}
 
 	private clear(key: string): void {
 		if (this.changes.delete(key)) {
 			this.notify();
 		}
+	}
+
+	// --- persistence ---------------------------------------------------------
+
+	private stateFile(): vscode.Uri | undefined {
+		return this.storageUri ? vscode.Uri.joinPath(this.storageUri, 'state.json') : undefined;
+	}
+
+	private scheduleSave(): void {
+		if (!this.storageUri) { return; }
+		if (this.saveTimer) { clearTimeout(this.saveTimer); }
+		this.saveTimer = setTimeout(() => void this.save(), 250);
+	}
+
+	private async save(): Promise<void> {
+		const file = this.stateFile();
+		if (!file) { return; }
+		const entries: Record<string, PersistedEntry> = {};
+		for (const [key, change] of this.changes) {
+			entries[key] = { kind: change.kind, baseline: this.baseline.get(key) ?? null };
+		}
+		try {
+			await vscode.workspace.fs.createDirectory(this.storageUri!);
+			await vscode.workspace.fs.writeFile(file, Buffer.from(JSON.stringify({ entries }), 'utf8'));
+		} catch { /* best effort */ }
+	}
+
+	async load(): Promise<void> {
+		const file = this.stateFile();
+		if (!file) { return; }
+		try {
+			const bytes = await vscode.workspace.fs.readFile(file);
+			const data = JSON.parse(Buffer.from(bytes).toString('utf8')) as { entries?: Record<string, PersistedEntry> };
+			for (const [key, entry] of Object.entries(data.entries ?? {})) {
+				this.changes.set(key, { uri: vscode.Uri.file(key), kind: entry.kind });
+				if (entry.baseline !== null) { this.baseline.set(key, entry.baseline); }
+			}
+			this._onDidChange.fire();
+		} catch { /* nothing persisted yet */ }
 	}
 }
 
@@ -190,6 +279,7 @@ class ChangesProvider implements vscode.TreeDataProvider<Change> {
 		const item = new vscode.TreeItem(change.uri, vscode.TreeItemCollapsibleState.None);
 		item.description = change.kind;
 		item.resourceUri = change.uri;
+		item.contextValue = 'lumeChange';
 		item.iconPath = new vscode.ThemeIcon(
 			change.kind === 'added' ? 'diff-added' : change.kind === 'deleted' ? 'diff-removed' : 'diff-modified',
 		);
@@ -210,7 +300,7 @@ class ChangesProvider implements vscode.TreeDataProvider<Change> {
 }
 
 export function activate(context: vscode.ExtensionContext): void {
-	const tracker = new ChangeTracker();
+	const tracker = new ChangeTracker(context.storageUri);
 	const provider = new ChangesProvider(tracker);
 
 	const watcher = vscode.workspace.createFileSystemWatcher('**/*');
@@ -223,9 +313,16 @@ export function activate(context: vscode.ExtensionContext): void {
 		vscode.workspace.registerTextDocumentContentProvider(BASELINE_SCHEME, new BaselineProvider(tracker)),
 		vscode.window.registerTreeDataProvider('lume.changes', provider),
 		vscode.commands.registerCommand('lume.refresh', () => provider.refresh()),
+		vscode.commands.registerCommand('lume.accept', (change: Change) => tracker.accept(change)),
+		vscode.commands.registerCommand('lume.undo', (change: Change) => tracker.undo(change)),
+		vscode.commands.registerCommand('lume.acceptAll', () => tracker.acceptAll()),
+		vscode.commands.registerCommand('lume.undoAll', () => tracker.undoAll()),
 	);
 
-	void tracker.seed();
+	void (async () => {
+		await tracker.load();
+		await tracker.seed();
+	})();
 }
 
 export function deactivate(): void {}

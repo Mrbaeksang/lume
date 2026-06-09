@@ -45,14 +45,56 @@
         "command": "lume.refresh",
         "title": "Lume: Refresh AI Changes",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "lume.accept",
+        "title": "Lume: Keep (Accept) Change",
+        "icon": "$(check)"
+      },
+      {
+        "command": "lume.undo",
+        "title": "Lume: Undo Change",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "lume.acceptAll",
+        "title": "Lume: Keep All",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "lume.undoAll",
+        "title": "Lume: Undo All",
+        "icon": "$(discard)"
       }
     ],
     "menus": {
       "view/title": [
         {
+          "command": "lume.acceptAll",
+          "when": "view == lume.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lume.undoAll",
+          "when": "view == lume.changes",
+          "group": "navigation@2"
+        },
+        {
           "command": "lume.refresh",
           "when": "view == lume.changes",
-          "group": "navigation"
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "lume.accept",
+          "when": "view == lume.changes",
+          "group": "inline@1"
+        },
+        {
+          "command": "lume.undo",
+          "when": "view == lume.changes",
+          "group": "inline@2"
         }
       ]
     }
