@@ -1,14 +1,17 @@
 ---
 name: Feature request
-about: Suggest an idea for this project
-title: ''
-labels: ''
-assignees: ''
-
+about: Suggest something for Lume
+title: ""
+labels: needs-triage
 ---
 
-<!-- ⚠️⚠️ Do Not Delete This! feature_request_template ⚠️⚠️ -->
-<!-- Please read our Rules of Conduct: https://opensource.microsoft.com/codeofconduct/ -->
-<!-- Please search existing issues to avoid creating duplicates. -->
+**The scope filter**
+<!-- Lume only adds features that make the AI's work more visible or trustworthy
+     (live diff, change triage, plan/reasoning, checkpoints, live preview).
+     General editor features belong upstream in VS Code. How does this fit? -->
 
-<!-- Describe the feature you'd like. -->
+**The problem**
+<!-- What can't you see / trust / undo today? -->
+
+**What you'd want to see**
+<!-- Describe the behavior, not the implementation. -->

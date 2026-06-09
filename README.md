@@ -1,6 +1,6 @@
 <div align="center">
 
-# Lume
+<img src="resources/lume/banner.svg" alt="Lume" width="640" />
 
 ### See what your AI actually changed — before you trust it.
 

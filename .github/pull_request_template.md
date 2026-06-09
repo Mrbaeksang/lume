@@ -1,7 +1,10 @@
-<!-- Thank you for submitting a Pull Request. Please:
-* Read our Pull Request guidelines:
-  https://github.com/microsoft/vscode/wiki/How-to-Contribute#pull-requests
-* Associate an issue with the Pull Request.
-* Ensure that the code is up-to-date with the `main` branch.
-* Include a description of the proposed changes and how to test them.
--->
+<!-- Thanks for contributing to Lume! Keep PRs small and focused. -->
+
+**What & why**
+<!-- One paragraph: what this changes and the problem it solves. Link the issue (Closes #N). -->
+
+**Checklist**
+- [ ] Fits Lume's scope (makes AI work more visible/trustworthy)
+- [ ] Surgical — no unrelated refactors/reformatting, especially in VS Code-derived files
+- [ ] `npm run compile` and `npm run test-node` pass
+- [ ] New files carry an Apache-2.0 header; upstream MIT headers untouched
