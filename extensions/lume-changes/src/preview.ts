@@ -13,24 +13,38 @@ export class LivePreview {
 
 	async open(): Promise<void> {
 		const fallback = vscode.workspace.getConfiguration('lume').get<string>('preview.url', 'http://localhost:3000');
-		const url = await vscode.window.showInputBox({
+		const input = await vscode.window.showInputBox({
 			prompt: 'Live preview URL (your dev server)',
 			value: this.url || fallback,
 		});
-		if (!url) { return; }
-		this.url = url.trim();
+		if (input === undefined) { return; }
+
+		// Validate: only http/https. The default can come from workspace settings,
+		// which are untrusted, so never interpolate it into HTML unchecked.
+		let parsed: URL;
+		try {
+			parsed = new URL(input.trim());
+		} catch {
+			vscode.window.showErrorMessage('Lume: invalid preview URL.');
+			return;
+		}
+		if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+			vscode.window.showErrorMessage('Lume: preview URL must start with http:// or https://');
+			return;
+		}
+		this.url = parsed.toString();
 
 		if (!this.panel) {
 			this.panel = vscode.window.createWebviewPanel(
 				'lumePreview',
 				'Live Preview',
 				vscode.ViewColumn.Beside,
-				{ enableScripts: true, retainContextWhenHidden: true },
+				{ enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [] },
 			);
 			this.panel.onDidDispose(() => { this.panel = undefined; });
 		}
-		this.panel.title = `Live Preview — ${this.url}`;
-		this.panel.webview.html = this.html(this.url);
+		this.panel.title = `Live Preview — ${parsed.host}`;
+		this.panel.webview.html = this.html(parsed);
 		this.panel.reveal(vscode.ViewColumn.Beside);
 	}
 
@@ -38,19 +52,22 @@ export class LivePreview {
 		this.panel?.webview.postMessage({ type: 'reload' });
 	}
 
-	private html(url: string): string {
-		const safe = url.replace(/"/g, '&quot;');
+	private html(url: URL): string {
+		// Inject the URL as a JS string literal (not an HTML attribute); escape `<`
+		// so it can't break out of the <script> element.
+		const urlLiteral = JSON.stringify(url.toString()).replace(/</g, '\\u003c');
 		return `<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src http: https:;" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-src ${url.origin};" />
 <style>html,body{margin:0;padding:0;height:100vh;overflow:hidden;background:#fff}iframe{border:0;width:100%;height:100vh}</style>
 </head>
 <body>
-<iframe id="frame" src="${safe}"></iframe>
+<iframe id="frame"></iframe>
 <script>
 	const frame = document.getElementById('frame');
+	frame.src = ${urlLiteral};
 	window.addEventListener('message', (e) => {
 		if (e.data && e.data.type === 'reload') { frame.src = frame.src; }
 	});
