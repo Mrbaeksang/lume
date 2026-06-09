@@ -31,6 +31,10 @@
         {
           "id": "lume.changes",
           "name": "AI Changes"
+        },
+        {
+          "id": "lume.checkpoints",
+          "name": "Checkpoints"
         }
       ]
     },
@@ -38,6 +42,10 @@
       {
         "view": "lume.changes",
         "contents": "No AI changes yet.\nRun your agent (Claude Code, Codex, …) — what it edits will appear here to review."
+      },
+      {
+        "view": "lume.checkpoints",
+        "contents": "No checkpoints yet.\nSnapshot your workspace so you can roll back to it later.\n[Create checkpoint](command:lume.checkpoint.create)"
       }
     ],
     "commands": [
@@ -65,6 +73,21 @@
         "command": "lume.undoAll",
         "title": "Lume: Undo All",
         "icon": "$(discard)"
+      },
+      {
+        "command": "lume.checkpoint.create",
+        "title": "Lume: Create Checkpoint",
+        "icon": "$(add)"
+      },
+      {
+        "command": "lume.checkpoint.restore",
+        "title": "Lume: Restore Checkpoint",
+        "icon": "$(history)"
+      },
+      {
+        "command": "lume.checkpoint.delete",
+        "title": "Lume: Delete Checkpoint",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -83,6 +106,11 @@
           "command": "lume.refresh",
           "when": "view == lume.changes",
           "group": "navigation@3"
+        },
+        {
+          "command": "lume.checkpoint.create",
+          "when": "view == lume.checkpoints",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -94,6 +122,16 @@
         {
           "command": "lume.undo",
           "when": "view == lume.changes",
+          "group": "inline@2"
+        },
+        {
+          "command": "lume.checkpoint.restore",
+          "when": "view == lume.checkpoints",
+          "group": "inline@1"
+        },
+        {
+          "command": "lume.checkpoint.delete",
+          "when": "view == lume.checkpoints",
           "group": "inline@2"
         }
       ]
