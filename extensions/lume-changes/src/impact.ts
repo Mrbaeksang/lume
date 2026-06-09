@@ -4,9 +4,10 @@
 import * as vscode from 'vscode';
 
 /**
- * Feature #8 (first slice): impact view. For the symbols an Agent changed, show how
- * many places reference them — "AI changed validateToken, used in 7 places" — so the
- * blast radius is visible *without AI*, using VS Code's own reference provider.
+ * Feature #8: impact / code map. For the symbols an Agent changed, show how many
+ * places reference them ("used in 7 places") and let the user expand a symbol to see
+ * exactly *who calls it* — the blast radius, explorable, all *without AI* (VS Code's
+ * own reference + call-hierarchy providers).
  */
 
 export interface ImpactSource {
@@ -15,12 +16,22 @@ export interface ImpactSource {
 	readonly onDidChange: vscode.Event<void>;
 }
 
-interface ImpactItem {
+interface SymbolNode {
+	readonly kind: 'symbol';
 	readonly name: string;
 	readonly uri: vscode.Uri;
 	readonly position: vscode.Position;
 	readonly refs: number;
 }
+
+interface CallerNode {
+	readonly kind: 'caller';
+	readonly name: string;
+	readonly uri: vscode.Uri;
+	readonly range: vscode.Range;
+}
+
+type ImpactNode = SymbolNode | CallerNode;
 
 const INTERESTING = new Set<vscode.SymbolKind>([
 	vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Class,
@@ -61,10 +72,21 @@ async function references(uri: vscode.Uri, pos: vscode.Position): Promise<vscode
 	}
 }
 
-export class ImpactProvider implements vscode.TreeDataProvider<ImpactItem> {
+async function incomingCallers(uri: vscode.Uri, pos: vscode.Position): Promise<CallerNode[]> {
+	try {
+		const prepared = await vscode.commands.executeCommand<vscode.CallHierarchyItem[]>('vscode.prepareCallHierarchy', uri, pos);
+		if (!prepared || !prepared.length) { return []; }
+		const calls = await vscode.commands.executeCommand<vscode.CallHierarchyIncomingCall[]>('vscode.provideIncomingCalls', prepared[0]);
+		return (calls ?? []).map(c => ({ kind: 'caller', name: c.from.name, uri: c.from.uri, range: c.from.selectionRange }));
+	} catch {
+		return [];
+	}
+}
+
+export class ImpactProvider implements vscode.TreeDataProvider<ImpactNode> {
 	private readonly _onDidChangeTreeData = new vscode.EventEmitter<void>();
 	readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
-	private items: ImpactItem[] = [];
+	private items: SymbolNode[] = [];
 	private timer?: ReturnType<typeof setTimeout>;
 
 	constructor(private readonly source: ImpactSource) {
@@ -81,7 +103,7 @@ export class ImpactProvider implements vscode.TreeDataProvider<ImpactItem> {
 	}
 
 	private async recompute(): Promise<void> {
-		const items: ImpactItem[] = [];
+		const items: SymbolNode[] = [];
 		for (const uri of this.source.modifiedFiles()) {
 			const lines = new Set(this.source.changedLines(uri.fsPath));
 			if (!lines.size) { continue; }
@@ -90,7 +112,7 @@ export class ImpactProvider implements vscode.TreeDataProvider<ImpactItem> {
 				const pos = s.selectionRange.start;
 				const refs = await references(uri, pos);
 				const external = refs.filter(r => !(r.uri.fsPath === uri.fsPath && r.range.start.line === pos.line)).length;
-				items.push({ name: s.name, uri, position: pos, refs: external });
+				items.push({ kind: 'symbol', name: s.name, uri, position: pos, refs: external });
 			}
 		}
 		items.sort((a, b) => b.refs - a.refs);
@@ -98,21 +120,25 @@ export class ImpactProvider implements vscode.TreeDataProvider<ImpactItem> {
 		this._onDidChangeTreeData.fire();
 	}
 
-	getTreeItem(it: ImpactItem): vscode.TreeItem {
-		const item = new vscode.TreeItem(it.name, vscode.TreeItemCollapsibleState.None);
-		item.description = `${it.refs} refs · ${vscode.workspace.asRelativePath(it.uri)}`;
-		item.tooltip = `${it.name} is referenced in ${it.refs} place(s) outside its definition`;
-		item.iconPath = new vscode.ThemeIcon('references');
-		item.command = {
-			command: 'vscode.open',
-			title: 'Open',
-			arguments: [it.uri, { selection: new vscode.Range(it.position, it.position) }],
-		};
+	getTreeItem(node: ImpactNode): vscode.TreeItem {
+		if (node.kind === 'caller') {
+			const item = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.None);
+			item.description = `${vscode.workspace.asRelativePath(node.uri)}:${node.range.start.line + 1}`;
+			item.iconPath = new vscode.ThemeIcon('call-incoming');
+			item.command = { command: 'vscode.open', title: 'Open', arguments: [node.uri, { selection: node.range }] };
+			return item;
+		}
+		const item = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.Collapsed);
+		item.description = `${node.refs} refs · ${vscode.workspace.asRelativePath(node.uri)}`;
+		item.tooltip = `${node.name} is referenced in ${node.refs} place(s). Expand to see callers.`;
+		item.iconPath = new vscode.ThemeIcon('symbol-method');
 		return item;
 	}
 
-	getChildren(): ImpactItem[] {
-		return this.items;
+	async getChildren(node?: ImpactNode): Promise<ImpactNode[]> {
+		if (!node) { return this.items; }
+		if (node.kind === 'symbol') { return incomingCallers(node.uri, node.position); }
+		return [];
 	}
 
 	/** Highest reference count among a file's changed symbols (0 if none / not computed). */
